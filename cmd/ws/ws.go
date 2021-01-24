@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -54,30 +55,37 @@ func updateConfiguredWorkspaces(store *gtk.ListStore) {
 }
 
 func (w *wsmgr) loadWorkspace(name string) {
-	log.Printf("TODO: load %q", name)
-	// move our window to the workspace as usual
-	// TODO: refactor add workspace function for that
+	log.Printf("Loading workspace %q", name)
+	w.addWorkspace(name)
 
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fis, err := ioutil.ReadDir(filepath.Join(configDir, "zkj-wsmgr"))
+	dir := filepath.Join(configDir, "zkj-wsmgr", name)
+	fis, err := ioutil.ReadDir(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, fi := range fis {
-		// TODO: execute executable files
-		// TODO: chrome-rewindow functionality
-		if !fi.Mode().IsDir() {
-			continue
-		}
-		if fi.Name() == "." || fi.Name() == ".." {
+		if fi.Mode().IsDir() && (fi.Name() == "." || fi.Name() == "..") {
 			continue
 		}
 
+		executable := fi.Mode()&0100 != 0
+		symlink := fi.Mode()&os.ModeSymlink != 0
+		if executable && !symlink {
+			// File executable by its owner, try to execute it
+			cmd := exec.Command(filepath.Join(dir, fi.Name()))
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				log.Printf("%v: %v", cmd.Args, err)
+			}
+		}
+
+		// TODO: chrome-rewindow functionality, driven via config text file
 	}
-
 }
 
 func (w *wsmgr) initWorkspaceLoaderTV() {
@@ -334,6 +342,25 @@ func (w *wsmgr) initCurrentWorkspaceTV() {
 	w.currentWorkspace.tv = tv
 }
 
+func (w *wsmgr) addWorkspace(name string) {
+	store := w.currentWorkspace.store
+	var highest int64
+	for iter, ok := store.GetIterFirst(); ok; ok = store.IterNext(iter) {
+		ws := w.workspaceFromIter(iter)
+		if ws.Num > highest {
+			highest = ws.Num
+		}
+	}
+	newName := fmt.Sprintf("%d: %s", highest+1, name)
+
+	cmd := fmt.Sprintf(`move container to workspace "%s"; workspace "%s"`, newName, newName)
+	if _, err := i3.RunCommand(cmd); err != nil {
+		log.Fatal(err)
+	}
+
+	w.updateWorkspaces()
+}
+
 func (w *wsmgr) initAddWorkspaceButton() {
 	addButton, err := gtk.ButtonNewWithMnemonic("_add workspace")
 	if err != nil {
@@ -341,22 +368,7 @@ func (w *wsmgr) initAddWorkspaceButton() {
 	}
 	addButton.Connect("clicked", func() {
 		log.Printf("adding new workspace")
-
-		store := w.currentWorkspace.store
-		var highest int64
-		for iter, ok := store.GetIterFirst(); ok; ok = store.IterNext(iter) {
-			ws := w.workspaceFromIter(iter)
-			if ws.Num > highest {
-				highest = ws.Num
-			}
-		}
-		newName := fmt.Sprintf("%d: unnamed", highest+1)
-		cmd := fmt.Sprintf(`move container to workspace "%s"; workspace "%s"`, newName, newName)
-		if _, err := i3.RunCommand(cmd); err != nil {
-			log.Fatal(err)
-		}
-
-		w.updateWorkspaces()
+		w.addWorkspace("unnamed")
 	})
 	w.addWorkspaceButton = addButton
 }
