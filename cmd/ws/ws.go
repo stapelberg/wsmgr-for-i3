@@ -24,108 +24,25 @@ func updateWorkspaces(store *gtk.ListStore) error {
 	return nil
 }
 
-func ws() error {
-	flag.Parse()
-
-	// Initialize GTK without parsing any command line arguments.
-	gtk.Init(nil)
-
-	cssProvider, err := gtk.CssProviderNew()
-	if err != nil {
-		return err
-	}
-
-	// TODO: can we use box-shadow?
-	// https://developer.gnome.org/gtk3/stable/chap-css-overview.html
-	// https://developer.gnome.org/gtk3/stable/chap-css-properties.html
-	cssProvider.LoadFromData(`
-
-#win,
-#grid,
-#icon,
-#title,
-#message,
-#btnunlock {
-  font-weight: bold;
-  font-style: italic;
-  color: #ffffff;
-  background: #000000;
-}
-
-#grid {
-  margin: 1rem;
-  border: 1px solid grey;
-  padding-left: 1rem;
-  padding-right: 1rem;
-}
-
-#icon {
-  margin-top: 1rem;
-  /*background-color: yellow;*/
-}
-
-#title {
-  padding: 1rem;
-  font-size: 150%;
-}
-
-#message {
-  padding: 1rem;
-}
-
-#btnunlock {
-  margin: 1rem;
-  padding: 1rem;
-  border: 1px solid green;
-}
-
-#btnunlock:hover {
-  background-color: #555;
-}
-
-#btnunlock:active {
-  background-color: blue;
-}
-`)
-
-	defaultScreen, err := gdk.ScreenGetDefault()
-	if err != nil {
-		return err
-	}
-	gtk.AddProviderForScreen(defaultScreen, cssProvider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-
-	// Create a new toplevel window, set its title, and connect it to the
-	// "destroy" signal to exit the GTK main loop when it is destroyed.
-	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
-	if err != nil {
-		return err
-	}
-	win.SetName("win")
-	win.SetModal(true)
-
-	win.SetTitle("i3 workspaces")
-	win.Connect("destroy", func() {
-		gtk.MainQuit()
-	})
-
+func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 	tv, err := gtk.TreeViewNew()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	workspaceNameRenderer, err := gtk.CellRendererTextNew()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	{
 		tvc, err := gtk.TreeViewColumnNew()
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		tvc.SetTitle("number")
 		renderer, err := gtk.CellRendererTextNew()
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		tvc.PackStart(renderer, true)
 		tvc.AddAttribute(renderer, "text", 0 /* references column 0 in model */)
@@ -136,7 +53,7 @@ func ws() error {
 	{
 		tvc, err := gtk.TreeViewColumnNew()
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		titleColumn = tvc
 		tvc.SetTitle("title")
@@ -150,10 +67,10 @@ func ws() error {
 	// Maybe that would free us from doing the awkward putting/getting into a gtk.ListStore
 	store, err := gtk.ListStoreNew(glib.TYPE_INT64, glib.TYPE_STRING, glib.TYPE_INT64)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if err := updateWorkspaces(store); err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	tv.SetModel(store)
@@ -299,7 +216,7 @@ func ws() error {
 
 	addButton, err := gtk.ButtonNewWithMnemonic("_add workspace")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	addButton.Connect("clicked", func() {
 		log.Printf("adding new workspace")
@@ -323,8 +240,50 @@ func ws() error {
 		}
 		ignoreEvents = false
 	})
+	return tv, addButton, nil
+}
+
+func ws() error {
+	flag.Parse()
+
+	// Initialize GTK without parsing any command line arguments.
+	gtk.Init(nil)
+
+	cssProvider, err := gtk.CssProviderNew()
+	if err != nil {
+		return err
+	}
+
+	// TODO: can we use box-shadow?
+	// https://developer.gnome.org/gtk3/stable/chap-css-overview.html
+	// https://developer.gnome.org/gtk3/stable/chap-css-properties.html
+	cssProvider.LoadFromData(css)
+
+	defaultScreen, err := gdk.ScreenGetDefault()
+	if err != nil {
+		return err
+	}
+	gtk.AddProviderForScreen(defaultScreen, cssProvider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+	// Create a new toplevel window, set its title, and connect it to the
+	// "destroy" signal to exit the GTK main loop when it is destroyed.
+	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
+	if err != nil {
+		return err
+	}
+	win.SetName("win")
+	win.SetModal(true)
+
+	win.SetTitle("i3 workspaces")
+	win.Connect("destroy", func() {
+		gtk.MainQuit()
+	})
 
 	vbox, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 10)
+	if err != nil {
+		return err
+	}
+	tv, addButton, err := workspaceManagement()
 	if err != nil {
 		return err
 	}
