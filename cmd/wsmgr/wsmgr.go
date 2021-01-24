@@ -72,11 +72,13 @@ func (w *wsmgr) loadWorkspace(name string) {
 			continue
 		}
 
+		path := filepath.Join(dir, fi.Name())
+
 		executable := fi.Mode()&0100 != 0
 		symlink := fi.Mode()&os.ModeSymlink != 0
 		if executable && !symlink {
 			// File executable by its owner, try to execute it
-			cmd := exec.Command(filepath.Join(dir, fi.Name()))
+			cmd := exec.Command(path)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
@@ -84,7 +86,20 @@ func (w *wsmgr) loadWorkspace(name string) {
 			}
 		}
 
-		// TODO: chrome-rewindow functionality, driven via config text file
+		if fi.Name() == "chrome-rewindow" {
+			b, err := ioutil.ReadFile(path)
+			if err != nil {
+				log.Print(err)
+				continue
+			}
+			n := strings.TrimSpace(string(b))
+			cmd := exec.Command("wsmgr-chrome-rewindow", "-name="+n)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				log.Printf("%v: %v", cmd.Args, err)
+			}
+		}
 	}
 }
 
