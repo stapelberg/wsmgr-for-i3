@@ -1,9 +1,18 @@
+// The whole program uses log.Fatal for error handling, under the assumption
+// that any error is either a bug (likely with how we use GTK, or in gotk3), or
+// i3 having gone away, in which case this program should terminate, too.
+//
+// Workspaces are configured in ~/.config/zkj-wsmgr/<name>. Each setting is
+// configured via its own file.
 package main
 
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gotk3/gotk3/gdk"
@@ -12,37 +21,192 @@ import (
 	"go.i3wm.org/i3/v4"
 )
 
-func updateWorkspaces(store *gtk.ListStore) error {
-	workspaces, err := i3.GetWorkspaces()
-	if err != nil {
-		return err
+type wsmgr struct {
+	currentWorkspace struct {
+		store        *gtk.ListStore
+		tv           *gtk.TreeView
+		ignoreEvents bool
 	}
-	store.Clear()
-	for _, ws := range workspaces {
-		store.Set(store.Append(), []int{0, 1, 2}, []interface{}{ws.Num, ws.Name, ws.ID})
-	}
-	return nil
+
+	addWorkspaceButton *gtk.Button
+
+	workspaceLoaderTV *gtk.TreeView
 }
 
-func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
+func updateConfiguredWorkspaces(store *gtk.ListStore) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fis, err := ioutil.ReadDir(filepath.Join(configDir, "zkj-wsmgr"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, fi := range fis {
+		if !fi.Mode().IsDir() {
+			continue
+		}
+		if fi.Name() == "." || fi.Name() == ".." {
+			continue
+		}
+		store.Set(store.Append(), []int{0, 1}, []interface{}{fi.Name(), 0})
+	}
+}
+
+func (w *wsmgr) loadWorkspace(name string) {
+	log.Printf("TODO: load %q", name)
+	// move our window to the workspace as usual
+	// TODO: refactor add workspace function for that
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fis, err := ioutil.ReadDir(filepath.Join(configDir, "zkj-wsmgr"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, fi := range fis {
+		// TODO: execute executable files
+		// TODO: chrome-rewindow functionality
+		if !fi.Mode().IsDir() {
+			continue
+		}
+		if fi.Name() == "." || fi.Name() == ".." {
+			continue
+		}
+
+	}
+
+}
+
+func (w *wsmgr) initWorkspaceLoaderTV() {
 	tv, err := gtk.TreeViewNew()
 	if err != nil {
-		return nil, nil, err
+		log.Fatal(err)
 	}
 	workspaceNameRenderer, err := gtk.CellRendererTextNew()
 	if err != nil {
-		return nil, nil, err
+		log.Fatal(err)
 	}
 
 	{
 		tvc, err := gtk.TreeViewColumnNew()
 		if err != nil {
-			return nil, nil, err
+			log.Fatal(err)
+		}
+		tvc.SetTitle("title")
+		renderer := workspaceNameRenderer // for convenience
+		tvc.PackStart(renderer, true)
+		tvc.AddAttribute(renderer, "text", 0 /* references column 0 in model */)
+		tv.AppendColumn(tvc)
+	}
+
+	store, err := gtk.ListStoreNew(glib.TYPE_STRING, glib.TYPE_INT64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	updateConfiguredWorkspaces(store)
+	tv.SetModel(store)
+
+	tv.Connect("row-activated", func(tv *gtk.TreeView, path *gtk.TreePath, column *gtk.TreeViewColumn) {
+		iter, err := store.GetIter(path)
+		if err != nil {
+			log.Fatalf("BUG: GetIterFromString(%q) = %v", path, err)
+		}
+
+		nameval, err := store.GetValue(iter, 0)
+		if err != nil {
+			log.Fatalf("BUG: GetValue(0) = %v", err)
+		}
+		name, err := nameval.GetString()
+		if err != nil {
+			log.Fatalf("BUG: GetString() = %v", err)
+		}
+
+		w.loadWorkspace(name)
+	})
+
+	w.workspaceLoaderTV = tv
+}
+
+func (w *wsmgr) updateWorkspaces() {
+	w.currentWorkspace.ignoreEvents = true
+	workspaces, err := i3.GetWorkspaces()
+	if err != nil {
+		log.Fatal(err)
+	}
+	store := w.currentWorkspace.store
+	store.Clear()
+	for _, ws := range workspaces {
+		store.Set(store.Append(), []int{0, 1, 2}, []interface{}{ws.Num, ws.Name, ws.ID})
+	}
+	w.currentWorkspace.ignoreEvents = false
+}
+
+func (w *wsmgr) workspaceFromIter(iter *gtk.TreeIter) i3.Workspace {
+	store := w.currentWorkspace.store
+
+	numval, err := store.GetValue(iter, 0)
+	if err != nil {
+		log.Fatalf("BUG: GetValue(0) = %v", err)
+	}
+	num, err := numval.GoValue()
+	if err != nil {
+		log.Fatalf("BUG: GoValue() = %v", err)
+	}
+
+	nameval, err := store.GetValue(iter, 1)
+	if err != nil {
+		log.Fatalf("BUG: GetValue(0) = %v", err)
+	}
+	name, err := nameval.GetString()
+	if err != nil {
+		log.Fatalf("BUG: GetString() = %v", err)
+	}
+
+	idval, err := store.GetValue(iter, 2)
+	if err != nil {
+		log.Fatalf("BUG: GetValue(2) = %v", err)
+	}
+	id, err := idval.GoValue()
+	if err != nil {
+		log.Fatalf("BUG: GoValue() = %v", err)
+	}
+	return i3.Workspace{
+		ID:   i3.WorkspaceID(id.(int64)),
+		Num:  num.(int64),
+		Name: name,
+	}
+}
+
+func (w *wsmgr) workspaceFromPath(path string) i3.Workspace {
+	iter, err := w.currentWorkspace.store.GetIterFromString(path)
+	if err != nil {
+		log.Fatalf("BUG: GetIterFromString(%q) = %v", path, err)
+	}
+	return w.workspaceFromIter(iter)
+}
+
+func (w *wsmgr) initCurrentWorkspaceTV() {
+	tv, err := gtk.TreeViewNew()
+	if err != nil {
+		log.Fatal(err)
+	}
+	workspaceNameRenderer, err := gtk.CellRendererTextNew()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	{
+		tvc, err := gtk.TreeViewColumnNew()
+		if err != nil {
+			log.Fatal(err)
 		}
 		tvc.SetTitle("number")
 		renderer, err := gtk.CellRendererTextNew()
 		if err != nil {
-			return nil, nil, err
+			log.Fatal(err)
 		}
 		tvc.PackStart(renderer, true)
 		tvc.AddAttribute(renderer, "text", 0 /* references column 0 in model */)
@@ -53,7 +217,7 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 	{
 		tvc, err := gtk.TreeViewColumnNew()
 		if err != nil {
-			return nil, nil, err
+			log.Fatal(err)
 		}
 		titleColumn = tvc
 		tvc.SetTitle("title")
@@ -67,54 +231,12 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 	// Maybe that would free us from doing the awkward putting/getting into a gtk.ListStore
 	store, err := gtk.ListStoreNew(glib.TYPE_INT64, glib.TYPE_STRING, glib.TYPE_INT64)
 	if err != nil {
-		return nil, nil, err
+		log.Fatal(err)
 	}
-	if err := updateWorkspaces(store); err != nil {
-		return nil, nil, err
-	}
+	w.currentWorkspace.store = store
+	w.updateWorkspaces()
 
 	tv.SetModel(store)
-
-	workspaceFromIter := func(iter *gtk.TreeIter) i3.Workspace {
-		numval, err := store.GetValue(iter, 0)
-		if err != nil {
-			log.Fatalf("BUG: GetValue(0) = %v", err)
-		}
-		num, err := numval.GoValue()
-		if err != nil {
-			log.Fatalf("BUG: GoValue() = %v", err)
-		}
-
-		nameval, err := store.GetValue(iter, 1)
-		if err != nil {
-			log.Fatalf("BUG: GetValue(0) = %v", err)
-		}
-		name, err := nameval.GetString()
-		if err != nil {
-			log.Fatalf("BUG: GetString() = %v", err)
-		}
-
-		idval, err := store.GetValue(iter, 2)
-		if err != nil {
-			log.Fatalf("BUG: GetValue(2) = %v", err)
-		}
-		id, err := idval.GoValue()
-		if err != nil {
-			log.Fatalf("BUG: GoValue() = %v", err)
-		}
-		return i3.Workspace{
-			ID:   i3.WorkspaceID(id.(int64)),
-			Num:  num.(int64),
-			Name: name,
-		}
-	}
-	workspaceFromPath := func(path string) i3.Workspace {
-		iter, err := store.GetIterFromString(path)
-		if err != nil {
-			log.Fatalf("BUG: GetIterFromString(%q) = %v", path, err)
-		}
-		return workspaceFromIter(iter)
-	}
 
 	workspaceNameRenderer.SetProperty("editable", true)
 	workspaceNameRenderer.Connect("edited", func(cell *gtk.CellRendererText, path string, newText string) {
@@ -123,7 +245,7 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 			log.Fatalf("BUG: GetIterFromString(%q) = %v", path, err)
 		}
 
-		existing := workspaceFromPath(path)
+		existing := w.workspaceFromPath(path)
 		numPrefix := fmt.Sprintf("%d: ", existing.Num)
 		if !strings.HasPrefix(newText, numPrefix) {
 			newText = numPrefix + newText
@@ -142,9 +264,8 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 
 	tv.SetReorderable(true)
 
-	ignoreEvents := false
 	store.Connect("row-inserted", func(model gtk.ITreeModel, path *gtk.TreePath, iter *gtk.TreeIter) {
-		if ignoreEvents {
+		if w.currentWorkspace.ignoreEvents {
 			return // currently updating
 		}
 		// NOTE: the row was inserted without any data yet, the row-changed
@@ -156,7 +277,7 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 	})
 	//var changedWorkspace i3.Workspace
 	store.Connect("row-changed", func(model gtk.ITreeModel, path *gtk.TreePath, iter *gtk.TreeIter) {
-		if ignoreEvents {
+		if w.currentWorkspace.ignoreEvents {
 			return // currently updating
 		}
 
@@ -164,7 +285,7 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 		//changedWorkspace = workspaceFromPath(path.String())
 	})
 	store.Connect("row-deleted", func(model gtk.ITreeModel, path *gtk.TreePath) {
-		if ignoreEvents {
+		if w.currentWorkspace.ignoreEvents {
 			return // currently updating
 		}
 
@@ -173,7 +294,7 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 		var num int64
 		for iter, ok := store.GetIterFirst(); ok; ok = store.IterNext(iter) {
 			num++
-			ws := workspaceFromIter(iter)
+			ws := w.workspaceFromIter(iter)
 			log.Printf("  ws = %+v", ws)
 			if ws.Num == num {
 				continue // no rename required
@@ -194,11 +315,7 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 			}
 		}
 
-		ignoreEvents = true
-		if err := updateWorkspaces(store); err != nil {
-			log.Print(err)
-		}
-		ignoreEvents = false
+		w.updateWorkspaces()
 	})
 
 	// When double-clicking a workspace, move our window to the workspace, then
@@ -206,7 +323,7 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 	// which windows are present on which workspace, without having to deal with
 	// moving windows around manually.
 	tv.Connect("row-activated", func(tv *gtk.TreeView, path *gtk.TreePath, column *gtk.TreeViewColumn) {
-		activated := workspaceFromPath(path.String())
+		activated := w.workspaceFromPath(path.String())
 		log.Printf("row-activated signal for workspace %+v", activated)
 		cmd := fmt.Sprintf(`move container to workspace "%s"; workspace "%s"`, activated.Name, activated.Name)
 		if _, err := i3.RunCommand(cmd); err != nil {
@@ -214,16 +331,21 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 		}
 	})
 
+	w.currentWorkspace.tv = tv
+}
+
+func (w *wsmgr) initAddWorkspaceButton() {
 	addButton, err := gtk.ButtonNewWithMnemonic("_add workspace")
 	if err != nil {
-		return nil, nil, err
+		log.Fatal(err)
 	}
 	addButton.Connect("clicked", func() {
 		log.Printf("adding new workspace")
 
+		store := w.currentWorkspace.store
 		var highest int64
 		for iter, ok := store.GetIterFirst(); ok; ok = store.IterNext(iter) {
-			ws := workspaceFromIter(iter)
+			ws := w.workspaceFromIter(iter)
 			if ws.Num > highest {
 				highest = ws.Num
 			}
@@ -234,13 +356,9 @@ func workspaceManagement() (*gtk.TreeView, *gtk.Button, error) {
 			log.Fatal(err)
 		}
 
-		ignoreEvents = true
-		if err := updateWorkspaces(store); err != nil {
-			log.Print(err)
-		}
-		ignoreEvents = false
+		w.updateWorkspaces()
 	})
-	return tv, addButton, nil
+	w.addWorkspaceButton = addButton
 }
 
 func ws() error {
@@ -279,16 +397,18 @@ func ws() error {
 		gtk.MainQuit()
 	})
 
+	w := &wsmgr{}
+	w.initCurrentWorkspaceTV()
+	w.initAddWorkspaceButton()
+	w.initWorkspaceLoaderTV()
+
 	vbox, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 10)
 	if err != nil {
 		return err
 	}
-	tv, addButton, err := workspaceManagement()
-	if err != nil {
-		return err
-	}
-	vbox.PackStart(tv, true, true, 5)
-	vbox.PackStart(addButton, false, false, 5)
+	vbox.PackStart(w.currentWorkspace.tv, true, true, 5)
+	vbox.PackStart(w.addWorkspaceButton, false, false, 5)
+	vbox.PackStart(w.workspaceLoaderTV, false, false, 5)
 	win.Add(vbox)
 
 	// Set the default window size.
