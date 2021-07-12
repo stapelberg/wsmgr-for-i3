@@ -261,6 +261,35 @@ func (w *wsmgr) initCurrentWorkspaceTV() {
 
 	tv.SetModel(store)
 
+	if iter, ok := store.GetIterFirst(); ok {
+		focused := int64(1)
+		workspaces, err := i3.GetWorkspaces()
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, ws := range workspaces {
+			if ws.Focused {
+				focused = ws.Num
+				break
+			}
+		}
+		for {
+			ws := w.workspaceFromIter(iter)
+			if ws.Num == focused {
+				path, err := store.GetPath(iter)
+				if err != nil {
+					log.Printf("GetPath(%v): %v", iter, err)
+					break
+				}
+				tv.SetCursor(path, titleColumn, false /* startEditing */)
+				break
+			}
+			if !store.IterNext(iter) {
+				break
+			}
+		}
+	}
+
 	workspaceNameRenderer.SetProperty("editable", true)
 	workspaceNameRenderer.Connect("edited", func(cell *gtk.CellRendererText, path string, newText string) {
 		iter, err := store.GetIterFromString(path)
