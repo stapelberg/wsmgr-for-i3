@@ -2,7 +2,7 @@
 // that any error is either a bug (likely with how we use GTK, or in gotk3), or
 // i3 having gone away, in which case this program should terminate, too.
 //
-// Workspaces are configured in ~/.config/zkj-wsmgr/<name>. Each setting is
+// Workspaces are configured in ~/.config/wsmgr-for-i3/<name>. Each setting is
 // configured via its own file.
 package main
 
@@ -39,8 +39,11 @@ func updateConfiguredWorkspaces(store *gtk.ListStore) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fis, err := ioutil.ReadDir(filepath.Join(configDir, "zkj-wsmgr"))
+	fis, err := ioutil.ReadDir(filepath.Join(configDir, "wsmgr-for-i3"))
 	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
 		log.Fatal(err)
 	}
 	for _, fi := range fis {
@@ -62,7 +65,7 @@ func (w *wsmgr) loadWorkspace(name string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dir := filepath.Join(configDir, "zkj-wsmgr", name)
+	dir := filepath.Join(configDir, "wsmgr-for-i3", name)
 	fis, err := ioutil.ReadDir(dir)
 	if err != nil {
 		log.Fatal(err)

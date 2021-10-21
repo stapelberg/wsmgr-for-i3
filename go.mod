@@ -1,4 +1,4 @@
-module zkj-workspace-switcher
+module wsmgr-for-i3
 
 go 1.15
 

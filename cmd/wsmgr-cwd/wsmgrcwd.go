@@ -35,12 +35,12 @@ func chdir() error {
 	workspaceName := getWorkspaceName()
 	log.Printf("workspace name = %q", workspaceName)
 
-	// check if ~/.config/zkj-wsmgr/<name>/cwd exists
+	// check if ~/.config/wsmgr-for-i3/<name>/cwd exists
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
 	}
-	target, err := os.Readlink(filepath.Join(configDir, "zkj-wsmgr", workspaceName, "cwd"))
+	target, err := os.Readlink(filepath.Join(configDir, "wsmgr-for-i3", workspaceName, "cwd"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
