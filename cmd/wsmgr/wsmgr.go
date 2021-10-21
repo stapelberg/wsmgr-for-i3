@@ -20,6 +20,8 @@ import (
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"go.i3wm.org/i3/v4"
+
+	_ "embed"
 )
 
 type wsmgr struct {
@@ -420,6 +422,33 @@ func (w *wsmgr) initAddWorkspaceButton() {
 	w.addWorkspaceButton = addButton
 }
 
+//go:embed "logo.png"
+var logoPNG []byte
+
+func setIconFromEmbeddedResource(b []byte, win *gtk.Window) error {
+	f, err := ioutil.TempFile("", "logopng")
+	if err != nil {
+		return err
+	}
+
+	if _, err := f.Write(logoPNG); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	if err := win.SetIconFromFile(f.Name()); err != nil {
+		return err
+	}
+
+	if err := os.Remove(f.Name()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func ws() error {
 	flag.Parse()
 
@@ -455,6 +484,10 @@ func ws() error {
 	win.Connect("destroy", func() {
 		gtk.MainQuit()
 	})
+
+	if err := setIconFromEmbeddedResource(logoPNG, win); err != nil {
+		log.Print(err)
+	}
 
 	w := &wsmgr{}
 	w.initCurrentWorkspaceTV()
