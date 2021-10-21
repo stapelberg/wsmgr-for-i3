@@ -81,7 +81,19 @@ func (w *wsmgr) loadWorkspace(name string) {
 
 		executable := fi.Mode()&0100 != 0
 		symlink := fi.Mode()&os.ModeSymlink != 0
-		if executable && !symlink {
+		if symlink {
+			fi, err := os.Stat(path)
+			if err != nil {
+				log.Print(err)
+				continue
+			}
+			executable = fi.Mode()&0100 != 0
+			if fi.Mode().IsDir() {
+				executable = false
+			}
+		}
+		if executable {
+			log.Printf("starting executable %s", path)
 			// File executable by its owner, try to execute it
 			cmd := exec.Command(path)
 			cmd.Stdout = os.Stdout
