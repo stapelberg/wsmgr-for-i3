@@ -68,12 +68,20 @@ func (w *wsmgr) loadWorkspace(name string) {
 		log.Fatal(err)
 	}
 	dir := filepath.Join(configDir, "wsmgr-for-i3", name)
+	cwd, err := filepath.EvalSymlinks(filepath.Join(dir, "cwd"))
+	if err != nil && !os.IsNotExist(err) {
+		log.Fatal(err)
+	}
 	fis, err := ioutil.ReadDir(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, fi := range fis {
 		if fi.Mode().IsDir() && (fi.Name() == "." || fi.Name() == "..") {
+			continue
+		}
+
+		if fi.Name() == "cwd" {
 			continue
 		}
 
@@ -96,6 +104,9 @@ func (w *wsmgr) loadWorkspace(name string) {
 			log.Printf("starting executable %s", path)
 			// File executable by its owner, try to execute it
 			cmd := exec.Command(path)
+			if cwd != "" {
+				cmd.Dir = cwd
+			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
