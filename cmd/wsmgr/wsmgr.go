@@ -121,7 +121,7 @@ func (w *wsmgr) initWorkspaceLoaderTV() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		tvc.SetTitle("title")
+		tvc.SetTitle("load workspace…")
 		renderer := workspaceNameRenderer // for convenience
 		tvc.PackStart(renderer, true)
 		tvc.AddAttribute(renderer, "text", 0 /* references column 0 in model */)
@@ -246,7 +246,7 @@ func (w *wsmgr) initCurrentWorkspaceTV() {
 			log.Fatal(err)
 		}
 		titleColumn = tvc
-		tvc.SetTitle("title")
+		tvc.SetTitle("name")
 		renderer := workspaceNameRenderer // for convenience
 		tvc.PackStart(renderer, true)
 		tvc.AddAttribute(renderer, "text", 1 /* references column 0 in model */)
@@ -451,7 +451,7 @@ func ws() error {
 	win.SetName("win")
 	win.SetModal(true)
 
-	win.SetTitle("i3 workspaces")
+	win.SetTitle("wsmgr-for-i3 workspace manager")
 	win.Connect("destroy", func() {
 		gtk.MainQuit()
 	})
