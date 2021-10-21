@@ -1,4 +1,4 @@
-module wsmgr-for-i3
+module github.com/stapelberg/wsmgr-for-i3
 
 go 1.16
 
