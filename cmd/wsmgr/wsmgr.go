@@ -109,9 +109,11 @@ func (w *wsmgr) loadWorkspace(name string) {
 			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				log.Printf("%v: %v", cmd.Args, err)
-			}
+			go func() {
+				if err := cmd.Run(); err != nil {
+					log.Printf("%v: %v", cmd.Args, err)
+				}
+			}()
 		}
 
 		if fi.Name() == "chrome-rewindow" {
