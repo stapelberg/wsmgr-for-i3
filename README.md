@@ -3,7 +3,10 @@
 `wsmgr-for-i3` (workspace manager for i3) is a Go GTK3 program to manage i3
 workspaces. It allows you to re-order and re-name workspaces easily.
 
-TODO: screencast of the program in action!
+You can see the workspace manager in action in this [4-minute introduction
+video](https://youtu.be/K0JeGSivuJE):
+
+[![](img/2021-10-23-youtube-thumb.jpg)](https://youtu.be/K0JeGSivuJE)
 
 Maintenance level: best-effort. I wrote this program to scratch a personal
 itch. Improvements are welcome, but should first be discussed.
