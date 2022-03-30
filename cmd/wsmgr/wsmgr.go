@@ -7,7 +7,7 @@
 package main
 
 import (
-	"flag"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -16,9 +16,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/renameio/v2"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
+	"github.com/spf13/cobra"
 	"go.i3wm.org/i3/v4"
 
 	_ "embed"
@@ -476,69 +478,114 @@ func setIconFromEmbeddedResource(b []byte, win *gtk.Window) error {
 	return nil
 }
 
+func autosave() error {
+	workspaces, err := i3.GetWorkspaces()
+	if err != nil {
+		log.Fatal(err)
+	}
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	autosaveFile := filepath.Join(configDir, "wsmgr-for-i3", "autosave.json")
+	f, err := renameio.TempFile("", autosaveFile)
+	if err != nil {
+		return err
+	}
+	defer f.Cleanup()
+	b, err := json.Marshal(workspaces)
+	if err != nil {
+		return err
+	}
+	f.Write(b)
+	return f.CloseAtomicallyReplace()
+}
+
+var rootCmd = &cobra.Command{
+	Use:   "wsmgr",
+	Short: "workspace manager",
+	Long:  "workspace manager",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Initialize GTK without parsing any command line arguments.
+		gtk.Init(nil)
+
+		cssProvider, err := gtk.CssProviderNew()
+		if err != nil {
+			return err
+		}
+
+		// TODO: can we use box-shadow?
+		// https://developer.gnome.org/gtk3/stable/chap-css-overview.html
+		// https://developer.gnome.org/gtk3/stable/chap-css-properties.html
+		cssProvider.LoadFromData(css)
+
+		defaultScreen, err := gdk.ScreenGetDefault()
+		if err != nil {
+			return err
+		}
+		gtk.AddProviderForScreen(defaultScreen, cssProvider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+		// Create a new toplevel window, set its title, and connect it to the
+		// "destroy" signal to exit the GTK main loop when it is destroyed.
+		win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
+		if err != nil {
+			return err
+		}
+		win.SetName("win")
+		win.SetModal(true)
+
+		win.SetTitle("wsmgr-for-i3 workspace manager")
+		win.Connect("destroy", func() {
+			gtk.MainQuit()
+		})
+
+		if err := setIconFromEmbeddedResource(logoPNG, win); err != nil {
+			log.Print(err)
+		}
+
+		w := &wsmgr{}
+		w.initCurrentWorkspaceTV()
+		w.initAddWorkspaceButton()
+		w.initWorkspaceLoaderTV()
+
+		vbox, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 10)
+		if err != nil {
+			return err
+		}
+		vbox.PackStart(w.currentWorkspace.tv, true, true, 5)
+		vbox.PackStart(w.addWorkspaceButton, false, false, 5)
+		vbox.PackStart(w.workspaceLoaderTV, false, false, 5)
+		win.Add(vbox)
+
+		// Set the default window size.
+		win.SetDefaultSize(800, 600)
+
+		// Recursively show all widgets contained in this window.
+		win.ShowAll()
+
+		// Begin executing the GTK main loop.  This blocks until
+		// gtk.MainQuit() is run.
+		gtk.Main()
+
+		return nil
+	},
+}
+
+var autosaveCmd = &cobra.Command{
+	Use:   "autosave",
+	Short: "save workspace names to the autosave file",
+	Long:  "do not show the GUI, instead save workspace names to the autosave file",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return autosave()
+	},
+}
+
 func ws() error {
-	flag.Parse()
+	rootCmd.AddCommand(autosaveCmd)
 
-	// Initialize GTK without parsing any command line arguments.
-	gtk.Init(nil)
-
-	cssProvider, err := gtk.CssProviderNew()
-	if err != nil {
+	if err := rootCmd.Execute(); err != nil {
 		return err
 	}
-
-	// TODO: can we use box-shadow?
-	// https://developer.gnome.org/gtk3/stable/chap-css-overview.html
-	// https://developer.gnome.org/gtk3/stable/chap-css-properties.html
-	cssProvider.LoadFromData(css)
-
-	defaultScreen, err := gdk.ScreenGetDefault()
-	if err != nil {
-		return err
-	}
-	gtk.AddProviderForScreen(defaultScreen, cssProvider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-
-	// Create a new toplevel window, set its title, and connect it to the
-	// "destroy" signal to exit the GTK main loop when it is destroyed.
-	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
-	if err != nil {
-		return err
-	}
-	win.SetName("win")
-	win.SetModal(true)
-
-	win.SetTitle("wsmgr-for-i3 workspace manager")
-	win.Connect("destroy", func() {
-		gtk.MainQuit()
-	})
-
-	if err := setIconFromEmbeddedResource(logoPNG, win); err != nil {
-		log.Print(err)
-	}
-
-	w := &wsmgr{}
-	w.initCurrentWorkspaceTV()
-	w.initAddWorkspaceButton()
-	w.initWorkspaceLoaderTV()
-
-	vbox, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 10)
-	if err != nil {
-		return err
-	}
-	vbox.PackStart(w.currentWorkspace.tv, true, true, 5)
-	vbox.PackStart(w.addWorkspaceButton, false, false, 5)
-	vbox.PackStart(w.workspaceLoaderTV, false, false, 5)
-	win.Add(vbox)
-
-	// Set the default window size.
-	win.SetDefaultSize(800, 600)
-
-	// Recursively show all widgets contained in this window.
-	win.ShowAll()
-
-	// Begin executing the GTK main loop.  This blocks until
-	// gtk.MainQuit() is run.
-	gtk.Main()
 
 	return nil
 }
