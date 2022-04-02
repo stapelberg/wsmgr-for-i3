@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/renameio/v2"
 	"github.com/gotk3/gotk3/gdk"
@@ -61,22 +62,21 @@ func updateConfiguredWorkspaces(store *gtk.ListStore) {
 	}
 }
 
-func (w *wsmgr) loadWorkspace(name string) {
+func loadWorkspace(name string) error {
 	log.Printf("Loading workspace %q", name)
-	w.addWorkspace(name)
 
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	dir := filepath.Join(configDir, "wsmgr-for-i3", name)
 	cwd, err := filepath.EvalSymlinks(filepath.Join(dir, "cwd"))
 	if err != nil && !os.IsNotExist(err) {
-		log.Fatal(err)
+		return err
 	}
 	fis, err := ioutil.ReadDir(dir)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	for _, fi := range fis {
 		if fi.Mode().IsDir() && (fi.Name() == "." || fi.Name() == "..") {
@@ -135,6 +135,7 @@ func (w *wsmgr) loadWorkspace(name string) {
 			}()
 		}
 	}
+	return nil
 }
 
 func (w *wsmgr) initWorkspaceLoaderTV() {
@@ -181,7 +182,10 @@ func (w *wsmgr) initWorkspaceLoaderTV() {
 			log.Fatalf("BUG: GetString() = %v", err)
 		}
 
-		w.loadWorkspace(name)
+		w.addWorkspace(name)
+		if err := loadWorkspace(name); err != nil {
+			log.Fatal(err)
+		}
 	})
 
 	w.workspaceLoaderTV = tv
@@ -501,6 +505,85 @@ func autosave() error {
 	return f.CloseAtomicallyReplace()
 }
 
+func nameWithoutNumberPrefix(ws i3.Workspace) string {
+	numPrefix := fmt.Sprintf("%d: ", ws.Num)
+	if strings.Contains(ws.Name, ":") {
+		// Named workspace
+		return strings.TrimPrefix(ws.Name, numPrefix)
+	}
+	// Numbered workspace
+	return ws.Name
+}
+
+func makeItSo(dryRun bool, current, desired []i3.Workspace) error {
+	currentByName := make(map[string]i3.Workspace)
+	for _, ws := range current {
+		currentByName[nameWithoutNumberPrefix(ws)] = ws
+	}
+
+	for _, ws := range desired {
+		if !strings.Contains(ws.Name, ":") {
+			continue
+		}
+		name := nameWithoutNumberPrefix(ws)
+		current, ok := currentByName[name]
+		if !ok {
+			if dryRun {
+				log.Printf("dry-run: load workspace %q to %q", name, ws.Name)
+				continue
+			}
+
+			cmd := fmt.Sprintf(`workspace "%s"`, ws.Name)
+			if _, err := i3.RunCommand(cmd); err != nil {
+				log.Fatal(err)
+			}
+			if err := loadWorkspace(name); err != nil {
+				log.Printf("loading workspace %q failed: %v", name, err)
+			}
+			time.Sleep(1 * time.Second) // TODO: remove this sleep if nothing breaks
+			continue
+		}
+
+		if current.Num != ws.Num {
+			// Workspace exists, but has the wrong number, rename it.
+			cmd := fmt.Sprintf(`rename workspace "%s" to "%s"`, current.Name, ws.Name)
+			if dryRun {
+				log.Printf("dry-run: %s", cmd)
+				continue
+			}
+
+			if _, err := i3.RunCommand(cmd); err != nil {
+				return err
+			}
+
+			continue
+		}
+	}
+	return nil
+}
+
+func restore(dryRun bool) error {
+	currentWorkspaces, err := i3.GetWorkspaces()
+	if err != nil {
+		log.Fatal(err)
+	}
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	autosaveFile := filepath.Join(configDir, "wsmgr-for-i3", "autosave.json")
+	b, err := ioutil.ReadFile(autosaveFile)
+	if err != nil {
+		return err
+	}
+	var desiredWorkspaces []i3.Workspace
+	if err := json.Unmarshal(b, &desiredWorkspaces); err != nil {
+		return err
+	}
+
+	return makeItSo(dryRun, currentWorkspaces, desiredWorkspaces)
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "wsmgr",
 	Short: "workspace manager",
@@ -580,8 +663,21 @@ var autosaveCmd = &cobra.Command{
 	},
 }
 
+var restoreCmd = &cobra.Command{
+	Use:   "restore",
+	Short: "restore workspace names from the autosave file",
+	Long:  "do not show the GUI, instead restore workspace names from the autosave file",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return restore(dryRun)
+	},
+}
+
+var dryRun bool
+
 func ws() error {
+	restoreCmd.Flags().BoolVarP(&dryRun, "dry-run", "", false, "do not change anything (dry-run mode)")
 	rootCmd.AddCommand(autosaveCmd)
+	rootCmd.AddCommand(restoreCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		return err
