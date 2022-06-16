@@ -60,7 +60,7 @@ func cwd() error {
 
 	// check if we have something to run
 	if len(os.Args) < 2 {
-		log.Fatal("no command to execute")
+		log.Fatalf("no command to execute: syntax: %s <command>", os.Args[0])
 	}
 
 	// run the remaining command line args
