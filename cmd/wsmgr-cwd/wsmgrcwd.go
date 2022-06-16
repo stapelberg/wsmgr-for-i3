@@ -59,7 +59,7 @@ func cwd() error {
 	}
 
 	// check if we have something to run
-	if len(os.Args[1:]) < 2 {
+	if len(os.Args) < 2 {
 		log.Fatal("no command to execute")
 	}
 
