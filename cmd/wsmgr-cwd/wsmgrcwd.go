@@ -58,6 +58,11 @@ func cwd() error {
 		log.Print(err)
 	}
 
+	// check if we have something to run
+	if len(os.Args[1:]) < 2 {
+		log.Fatal("no command to execute")
+	}
+
 	// run the remaining command line args
 	args := os.Args[1:]
 	full, err := exec.LookPath(args[0])
